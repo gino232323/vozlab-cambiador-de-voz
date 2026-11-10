@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101526"><title>VozLab — Cambiador de voz</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1220;--panel:#171e31;--line:#2a3550;--text:#f3f5ff;--muted:#9da9c2;--accent:#8d7bff;--green:#45d6a2}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -10%,#272453 0,transparent 48%),var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;display:grid;place-items:center;padding:22px}.app{width:min(760px,100%)}header{text-align:center;margin:0 0 24px}header .logo{font-size:35px}h1{font-size:clamp(27px,6vw,40px);margin:4px 0 5px;letter-spacing:-1px}header p{color:var(--muted);margin:0}.card{background:linear-gradient(145deg,#1a2238,#131a2b);border:1px solid var(--line);border-radius:22px;padding:clamp(18px,4vw,30px);box-shadow:0 20px 60px #0005}.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;margin-bottom:20px}.dot{width:10px;height:10px;border-radius:50%;background:#69738a}.dot.live{background:var(--green);box-shadow:0 0 13px #45d6a2}.styles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.style{border:1px solid var(--line);background:#11182a;color:var(--text);border-radius:14px;padding:13px 9px;cursor:pointer;text-align:left;transition:.15s;font:inherit}.style:hover{border-color:#7c70dc;transform:translateY(-1px)}.style.active{background:#28234e;border-color:var(--accent);box-shadow:0 0 0 1px #8d7bff44}.style b{display:block;font-size:14px}.style small{color:var(--muted);font-size:11px}.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.btn{border:0;border-radius:12px;padding:13px 18px;font:700 15px inherit;cursor:pointer;background:#29334c;color:var(--text)}.btn.primary{background:linear-gradient(135deg,#9b82ff,#6658ea);color:white;flex:1;min-width:180px}.btn.rec{background:#a73755}.btn:disabled{opacity:.45;cursor:not-allowed}.controls{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}.control{background:#11182a;border:1px solid var(--line);border-radius:14px;padding:14px}.control label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:8px}.control input{width:100%;accent-color:var(--accent)}.note{font-size:12px;color:var(--muted);margin:18px 0 0}.download{display:inline-block;color:#b8adff;margin:14px 0 0;word-break:break-all}.meter{height:5px;background:#283047;border-radius:10px;overflow:hidden;margin-top:14px}.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4ed6a5,#a0ed69);transition:width .09s}.hidden{display:none!important}footer{text-align:center;color:#77839e;font-size:12px;margin-top:15px}@media(max-width:520px){.styles{grid-template-columns:repeat(2,1fr)}.controls{grid-template-columns:1fr}.btn.primary{min-width:100%}}
+</style>
+</head>
+<body><main class="app"><header><div class="logo">🎙️</div><h1>VozLab</h1><p>Cambia tu voz en tiempo real y graba el resultado.</p></header>
+<section class="card"><div class="status"><i class="dot" id="dot"></i><span id="status">Micrófono apagado</span></div>
+<div class="styles" id="styles"></div>
+<div class="controls"><div class="control"><label for="volume">Volumen de salida <b id="volumeVal">80%</b></label><input id="volume" type="range" min="0" max="100" value="80"></div><div class="control"><label for="mix">Intensidad del efecto <b id="mixVal">75%</b></label><input id="mix" type="range" min="0" max="100" value="75"></div></div>
+<div class="meter"><i id="meter"></i></div>
+<div class="buttons"><button class="btn primary" id="start">🎤 Activar micrófono</button><button class="btn" id="stop" disabled>Detener</button><button class="btn" id="record" disabled>⏺ Grabar</button></div>
+<a id="download" class="download hidden" download="vozlab-grabacion.webm"></a>
+<p class="note">El navegador te pedirá permiso para usar el micrófono. Usa audífonos para evitar eco. El audio se procesa localmente en tu dispositivo; no se sube a ningún servidor.</p></section><footer>VozLab · Funciona en navegadores modernos con micrófono</footer></main>
+<script>
+(()=>{
+const presets=[
+{name:'Natural',icon:'🙂',desc:'Voz limpia',kind:'natural'},
+{name:'Robot',icon:'🤖',desc:'Metálica y modulada',kind:'robot'},
+{name:'Radio',icon:'📻',desc:'Walkie-talkie',kind:'radio'},
+{name:'Eco',icon:'🗣️',desc:'Repetición espacial',kind:'echo'},
+{name:'Alien',icon:'👽',desc:'Sonido extraño',kind:'alien'},
+{name:'Monstruo',icon:'👹',desc:'Grave y áspera',kind:'monster'},
+{name:'Teléfono',icon:'☎️',desc:'Banda telefónica',kind:'phone'},
+{name:'Bajo el agua',icon:'🌊',desc:'Filtrada y burbujeante',kind:'water'},
+{name:'Megáfono',icon:'📢',desc:'Fuerte y distorsionada',kind:'megaphone'}
+];
+const $=s=>document.querySelector(s), styles=$('#styles');let ctx,stream,source,master,mediaDest,recorder,chunks=[],active='natural',nodes=[],lfo,ringGain,analyser,raf;
+styles.innerHTML=presets.map((p,i)=>`<button class="style ${i===0?'active':''}" data-kind="${p.kind}"><b>${p.icon} ${p.name}</b><small>${p.desc}</small></button>`).join('');
+function clearGraph(){if(!source)return;try{source.disconnect()}catch{};nodes.forEach(n=>{try{n.disconnect()}catch{}});nodes=[];if(lfo){try{lfo.stop()}catch{};lfo=null}ringGain=null}
+function node(n){nodes.push(n);return n}
+function connectChain(list){let from=source;for(const n of list){from.connect(n);from=n}from.connect(master)}
+function build(){if(!ctx||!source)return;clearGraph();if(analyser)source.connect(analyser);const intensity=Number($('#mix').value)/100;let chain=[];
+const filter=(type,f,q=0.7)=>{let n=node(ctx.createBiquadFilter());n.type=type;n.frequency.value=f;n.Q.value=q;chain.push(n);return n};
+const dist=(amount)=>{let n=node(ctx.createWaveShaper());let curve=new Float32Array(44100),k=amount;for(let i=0;i<curve.length;i++){let x=i*2/curve.length-1;curve[i]=(1+k)*x/(1+k*Math.abs(x))}n.curve=curve;n.oversample='4x';chain.push(n);return n};
+const delay=(time,feedback=.25)=>{let d=node(ctx.createDelay(1));d.delayTime.value=time;let fb=node(ctx.createGain());fb.gain.value=feedback*intensity;d.connect(fb);fb.connect(d);chain.push(d);};
+if(active==='robot'){filter('highpass',180);filter('lowpass',2400);dist(2+intensity*5);let osc=node(ctx.createOscillator());osc.type='square';osc.frequency.value=34;let gain=node(ctx.createGain());gain.gain.value=0.35+intensity*.35;osc.connect(gain);let mod=node(ctx.createGain());mod.gain.value=.65;gain.connect(mod.gain);ringGain=mod;lfo=osc;osc.start();chain.push(mod)}
+else if(active==='radio'){filter('highpass',500);filter('lowpass',2400);dist(1+intensity*3);}
+else if(active==='echo'){filter('lowpass',6500);delay(.22,.42);}
+else if(active==='alien'){filter('bandpass',1100,1.8);dist(2+intensity*5);delay(.11,.25);}
+else if(active==='monster'){filter('lowpass',950);filter('peaking',170,1.1);chain[1].gain.value=9*intensity;dist(1+intensity*3);}
+else if(active==='phone'){filter('highpass',350);filter('lowpass',3000);dist(.7+intensity*2);}
+else if(active==='water'){filter('lowpass',850);filter('peaking',420,2);chain[1].gain.value=7*intensity;delay(.09,.18);}
+else if(active==='megaphone'){filter('highpass',400);filter('peaking',1400,1);chain[1].gain.value=5*intensity;dist(3+intensity*6);}
+connectChain(chain);}
+async function start(){try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();source=ctx.createMediaStreamSource(stream);master=ctx.createGain();master.gain.value=Number($('#volume').value)/100;mediaDest=ctx.createMediaStreamDestination();master.connect(ctx.destination);master.connect(mediaDest);analyser=ctx.createAnalyser();analyser.fftSize=128;source.connect(analyser);build();$('#dot').classList.add('live');$('#status').textContent='Micrófono activo · '+presets.find(p=>p.kind===active).name;$('#start').disabled=true;$('#stop').disabled=false;$('#record').disabled=false;meterLoop()}catch(e){$('#status').textContent=e.name==='NotAllowedError'?'Permiso de micrófono denegado. Habilítalo en el navegador.':'No se pudo activar el micrófono. Usa una página segura (HTTPS) y revisa el dispositivo.';}}
+function meterLoop(){if(!analyser)return;const data=new Uint8Array(analyser.frequencyBinCount);const tick=()=>{if(!analyser)return;analyser.getByteTimeDomainData(data);let sum=0;for(const x of data)sum+=(x-128)*(x-128);$('#meter').style.width=Math.min(100,Math.sqrt(sum/data.length)*1.7)+'%';raf=requestAnimationFrame(tick)};tick()}
+function stop(){if(recorder&&recorder.state==='recording')recorder.stop();if(stream)stream.getTracks().forEach(t=>t.stop());if(ctx)ctx.close();cancelAnimationFrame(raf);ctx=stream=source=master=mediaDest=analyser=null;$('#dot').classList.remove('live');$('#status').textContent='Micrófono apagado';$('#start').disabled=false;$('#stop').disabled=true;$('#record').disabled=true;$('#record').textContent='⏺ Grabar';$('#record').classList.remove('rec');$('#meter').style.width='0'}
+$('#start').addEventListener('click',start);$('#stop').addEventListener('click',stop);
+styles.addEventListener('click',e=>{const b=e.target.closest('.style');if(!b)return;active=b.dataset.kind;styles.querySelectorAll('.style').forEach(x=>x.classList.toggle('active',x===b));if(source){build();$('#status').textContent='Micrófono activo · '+presets.find(p=>p.kind===active).name}});
+$('#volume').addEventListener('input',e=>{$('#volumeVal').textContent=e.target.value+'%';if(master)master.gain.setTargetAtTime(Number(e.target.value)/100,ctx.currentTime,.03)});
+$('#mix').addEventListener('input',e=>{$('#mixVal').textContent=e.target.value+'%';if(source)build()});
+$('#record').addEventListener('click',()=>{if(!recorder||recorder.state==='inactive'){chunks=[];try{recorder=new MediaRecorder(mediaDest.stream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});const url=URL.createObjectURL(blob);const a=$('#download');a.href=url;a.download='vozlab-'+new Date().toISOString().replace(/[:.]/g,'-')+'.webm';a.textContent='⬇ Descargar grabación';a.classList.remove('hidden')};recorder.start();$('#record').textContent='⏹ Detener grabación';$('#record').classList.add('rec')}catch(e){$('#status').textContent='Este navegador no permite grabar audio.'}}else{recorder.stop();$('#record').textContent='⏺ Grabar';$('#record').classList.remove('rec')}});
+})();
+</script></body></html>
